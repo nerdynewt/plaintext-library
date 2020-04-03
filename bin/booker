@@ -1,0 +1,72 @@
+#!/bin/bash
+
+# A plaintext-based ebook library. Future-proof and termianl-friendly. 
+# Dpepedencies: Calibre, any markdown editor, a *sh shell
+source ~/.bashrc
+source ~/.local/share/booker/init.sh
+test -z $BOOKER_LIB && { echo "Please specify library in your ~/.bashrc"; exit; }
+
+cd $SCR/share/booker
+output=log
+echo $(date) >> $output
+
+while getopts ":avhri" opt; do
+  case $opt in
+    h)
+      echo "Booker, A plaintext ebook library"
+      echo "options:"
+      echo " -r                  refresh library"
+      echo " -i                  import annotations from Kindle"
+      echo " -v                  verbose"
+      echo " -h                  help"
+      exit
+      ;;
+    v)
+      output=/dev/tty
+      ;;
+   r)
+      echo "Refreshing your library..."
+      while read -r f; do
+        filename=$(basename -- "$f")
+        filename="${filename%.*}"
+        grep -o "$filename" library/library.csv >> $output || { ebook-convert "$f" "library/$filename".txt --txt-output-formatting markdown --keep-links --inline-toc;  echo "$filename,$(exiftool -T -Title "$f"),$(exiftool -T -Creator "$f")" >> library/library.csv; mv library/"$filename.txt" library/"$filename.md" >> $output; } >> $output
+      done<<< "$(find $BOOKER_LIB -name '*.epub')"
+      sed '/,,/d' library/library.csv | sed '/,-,/d' > temp && mv temp library/library.csv
+      ;;
+    i)
+      test -f "/Volumes/Kindle/documents/My Clippings.txt" || { echo "Kindle not plugged in. Exiting..."; exit; }
+      comm -23 "/Volumes/Kindle/documents/My Clippings.txt" "$SCR/share/booker/cache/My Clippings.txt" > cache/new
+      while IFS=, read -r col1 col2 col3; do
+        echo "Found annotations from: $col2" >> $output
+        line_number=$(grep -n "$col2" "cache/new" | cut -d : -f 1)
+        for number in $line_number; do
+          highlight=$(sed -n "$((number + 3))"p "cache/new" | sed 's/[^[:print:]]//g') 
+          echo $number--$highlight-- >> $output
+          sed "s/$highlight/==&==/g" library/"$col1".md > tmp && mv tmp library/"$col1".md
+        done
+      done < library/library.csv
+      cat cache/new >> cache/My\ Clippings.txt && rm cache/new
+      exit
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG" >&2
+      ;;
+  esac
+done
+
+
+
+open "$(ls library/*.md | fzf)"
+
+#------------------
+
+# IFS=$(echo -en "\n\b")
+# for f in $(find ~/Documents/Calibre -name '*.epub'); do
+#   filename=$(basename -- "$f")
+#   filename="${filename%.*}"
+#   grep "$filename" library/library.csv >> logs/booker.log || { ebook-convert "$f" library/"$filename".txt --txt-output-formatting markdown --keep-links --inline-toc;  echo "$filename,$(exiftool -T -Title "$f"),$(exiftool -T -Creator "$f")" >> library/library.csv; mv library/$filename.txt library/$filename.md > /dev/null; } >> logs/booker.log
+# done
+
+#for f in $(find raw -name '*.epub' -or -name '*.mobi'); do
+
+  # d -e 's/^M$//') #|sed 's/[^[:print:]]//g')
